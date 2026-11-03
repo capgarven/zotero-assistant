@@ -1,9 +1,14 @@
 var ZoteroAssistantPrefs = (function () {
-  function selectedService(menu) {
-    return menu.value || menu.getAttribute("value") || "custom";
-  }
+  var PDF_HINTS = {
+    deepseek: "DeepSeek's chat API does not accept PDF files. Leave this unchecked.",
+    gemini: "Gemini's OpenAI-compatible API does not accept PDF files. Leave this unchecked.",
+    kimi: "Kimi reads a PDF through its file API: the PDF is uploaded, Kimi extracts the text (with OCR), and that text is sent.",
+    openai: "The PDF is sent inside the request, so the model sees its pages and figures. The total limit is 50 MB.",
+    qwen: "The PDF is sent inside the request. Use qwen3.8-max or qwen3.8-flash, which read PDF files.",
+    custom: "Check this if the service accepts PDF files as Chat Completions file parts.",
+  };
 
-  function selectService(menu, id) {
+  function selectMenu(menu, id) {
     var item = menu.querySelector('menuitem[value="' + id + '"]');
     if (item) menu.selectedItem = item;
     menu.value = id;
@@ -16,61 +21,143 @@ var ZoteroAssistantPrefs = (function () {
     if (!doc || doc.documentElement.dataset.zaPrefs === "1") return;
     doc.documentElement.dataset.zaPrefs = "1";
     var api = Zotero.ZoteroAssistant;
-    var service = doc.getElementById("za-service");
-    var endpoint = doc.getElementById("za-endpoint");
-    var model = doc.getElementById("za-model");
-    var secret = doc.getElementById("za-secret");
-    var temperature = doc.getElementById("za-temperature");
-    var prompt = doc.getElementById("za-prompt");
-    var status = doc.getElementById("za-status");
-    api.migrateLegacy();
-    var shown = api.getPrefs().service || "deepseek";
+    function $(id) {
+      return doc.getElementById(id);
+    }
+    var list = $("za-profiles");
+    var name = $("za-name");
+    var provider = $("za-provider");
+    var endpoint = $("za-endpoint");
+    var model = $("za-model");
+    var modelHint = $("za-model-hint");
+    var secret = $("za-secret");
+    var temperature = $("za-temperature");
+    var pdf = $("za-pdf");
+    var pdfHint = $("za-pdf-hint");
+    var prompt = $("za-prompt");
+    var status = $("za-status");
+    var shown = api.activeProfileId();
+
+    function preset(id) {
+      return (
+        api.PRESETS.find(function (entry) {
+          return entry.id === id;
+        }) || api.PRESETS[api.PRESETS.length - 1]
+      );
+    }
+
+    function autoName(providerId, modelName) {
+      var entry = preset(providerId);
+      return entry.id === "custom" ? modelName || "Custom" : entry.label + " " + (modelName || entry.model);
+    }
+
+    function renderList() {
+      var active = api.activeProfileId();
+      list.replaceChildren();
+      api.getProfiles().forEach(function (profile) {
+        var option = doc.createElementNS("http://www.w3.org/1999/xhtml", "option");
+        option.value = profile.id;
+        option.textContent =
+          profile.name +
+          (profile.pdf ? "  · PDF" : "") +
+          (profile.hasKey ? "" : "  · no key") +
+          (profile.id === active ? "  · in use" : "");
+        list.appendChild(option);
+      });
+      list.value = shown;
+    }
+
+    function paintHints() {
+      var entry = preset(provider.value);
+      modelHint.value = entry.models.length ? "Suggested: " + entry.models.join(", ") : "";
+      pdfHint.textContent = PDF_HINTS[entry.id] || "";
+    }
 
     function fill(id) {
-      var prefs = api.getServicePrefs(id);
-      shown = id;
-      selectService(service, id);
-      endpoint.value = prefs.apiBase || "";
-      model.value = prefs.model || "";
-      secret.value = prefs.apiKey || "";
-      temperature.value = String(prefs.temperature);
-      prompt.value = prefs.prompt || "";
+      var profile = api.getProfile(id);
+      shown = profile.id;
+      name.value = profile.name;
+      selectMenu(provider, profile.provider);
+      endpoint.value = profile.apiBase;
+      model.value = profile.model;
+      secret.value = profile.apiKey || "";
+      temperature.value = String(profile.temperature);
+      pdf.checked = !!profile.pdf;
+      status.value = "";
+      paintHints();
+      renderList();
     }
 
     function save() {
-      api.setServiceConfig(shown, {
+      api.saveProfile({
+        id: shown,
+        name: name.value.trim() || autoName(provider.value, model.value.trim()),
+        provider: provider.value,
         apiBase: endpoint.value.trim(),
         model: model.value.trim(),
         temperature: temperature.value,
+        pdf: pdf.checked,
+        apiKey: secret.value.trim(),
       });
-      api.setServiceSecret(shown, secret.value.trim());
-      var next = api.getPrefs();
-      next.prompt = prompt.value;
-      api.setPrefs(next);
-      secret.value = secret.value.trim();
+      api.setPrompt(prompt.value);
+      renderList();
     }
 
+    prompt.value = api.getPrefs().prompt || "";
     fill(shown);
-    [endpoint, model, secret, temperature, prompt].forEach(function (field) {
-      field.addEventListener("blur", save);
-    });
-    service.addEventListener("command", function () {
+
+    list.addEventListener("change", function () {
+      if (!list.value || list.value === shown) return;
       save();
-      var id = selectedService(service);
-      api.setSelectedService(id);
-      fill(id);
-      status.value = "";
+      fill(list.value);
     });
-    doc.getElementById("za-test").addEventListener("command", async function () {
+    [name, endpoint, secret, temperature, prompt].forEach(function (field) {
+      field.addEventListener("change", save);
+    });
+    model.addEventListener("change", function () {
+      var previous = api.getProfile(shown);
+      if (!name.value.trim() || name.value === autoName(previous.provider, previous.model)) {
+        name.value = autoName(provider.value, model.value.trim());
+      }
+      save();
+    });
+    pdf.addEventListener("command", save);
+    provider.addEventListener("command", function () {
+      var previous = api.getProfile(shown);
+      if (previous.provider === provider.value) return;
+      var entry = preset(provider.value);
+      var renamed = !name.value.trim() || name.value === autoName(previous.provider, previous.model);
+      endpoint.value = entry.apiBase;
+      model.value = entry.model;
+      pdf.checked = !!entry.pdf;
+      if (renamed) name.value = autoName(entry.id, entry.model);
+      paintHints();
+      save();
+    });
+    $("za-add").addEventListener("command", function () {
+      save();
+      fill(api.addProfile("deepseek").id);
+      name.focus();
+    });
+    $("za-remove").addEventListener("command", function () {
+      try {
+        api.removeProfile(shown);
+        fill(api.activeProfileId());
+      } catch (error) {
+        status.value = error.message || String(error);
+      }
+    });
+    $("za-test").addEventListener("command", async function () {
       save();
       status.value = "Testing…";
       try {
-        var reply = await api.testConnection(api.getServicePrefs(shown));
+        var reply = await api.testConnection(api.prefsForProfile(shown));
         status.value = "Connected: " + (reply || "OK");
       } catch (error) {
         status.value = error && error.message ? error.message : String(error);
       }
     });
+    win.addEventListener("unload", save);
   }
 
   return { init: init };

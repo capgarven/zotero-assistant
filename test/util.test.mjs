@@ -112,6 +112,77 @@ test("appends a marked reading note and refuses an unrelated file", () => {
   assert.equal(conflict.ok, false);
 });
 
+test("points the model at the attached PDF instead of Markdown", () => {
+  const fitted = util.fitContext({
+    metadata: "Title: Test",
+    fulltext: "",
+    maxChars: 2000,
+    prompt: "Answer from the paper.",
+    attachedPdf: "paper.pdf",
+  });
+  const prompt = util.buildSystemPrompt(fitted);
+  assert.match(prompt, /## PDF/);
+  assert.match(prompt, /"paper\.pdf"/);
+  assert.equal(prompt.includes("## Markdown"), false);
+});
+
+test("numbers every paper of a collection in the prompt", () => {
+  const prompt = util.buildCollectionPrompt({
+    prompt: "Answer from the papers.",
+    name: "Sleep",
+    papers: [
+      { title: "A", metadata: "Title: A", text: "alpha body", markdown: true },
+      { title: "B", metadata: "Title: B", attachedPdf: "b.pdf" },
+      { title: "C", metadata: "Title: C", text: "", error: "This item has no attachment." },
+    ],
+  });
+  assert.match(prompt, /"Sleep", which holds 3 papers/);
+  assert.match(prompt, /## \[1\] A[\s\S]*alpha body/);
+  assert.match(prompt, /## \[2\] B[\s\S]*Attached as "b\.pdf"/);
+  assert.match(prompt, /## \[3\] C[\s\S]*no attachment/);
+});
+
+test("attaches PDF parts to the first user message only", () => {
+  const part = { type: "file", file: { filename: "a.pdf", file_data: "data:application/pdf;base64,AA" } };
+  const messages = util.attachToFirstUser(
+    [
+      { role: "system", content: "s" },
+      { role: "user", content: "first" },
+      { role: "assistant", content: "reply" },
+      { role: "user", content: "second" },
+    ],
+    [part],
+  );
+  assert.equal(messages[0].content, "s");
+  assert.equal(Array.isArray(messages[1].content), true);
+  assert.equal(messages[1].content[0].type, "file");
+  assert.equal(messages[1].content[1].text, "first");
+  assert.equal(messages[3].content, "second");
+});
+
+test("renders TeX formulas as MathML outside code", async () => {
+  const katex = (await import("katex")).default;
+  const math = (tex, display) =>
+    katex.renderToString(tex, { output: "mathml", displayMode: display, throwOnError: false, strict: "ignore" });
+  const html = util.renderMarkdown(
+    "设 $\\mathbf u_1$ 与 $s_1+s_2+s_3=0$。\n\n$$x=\\frac{2s_1-s_2-s_3}{\\sqrt6}$$\n\n行内 \\(a_b\\) 和 \\[\\sigma_2\\]\n\n价格 $5 和 $10，转义 \\$x\\$，代码 `$y$`",
+    { math },
+  );
+  assert.equal((html.match(/<math/g) || []).length, 5);
+  assert.match(html, /display="block"/);
+  assert.equal(html.includes("<em>"), false);
+  assert.match(html, /价格 \$5 和 \$10/);
+  assert.match(html, /转义 \$x\$/);
+  assert.match(html, /<code>\$y\$<\/code>/);
+  assert.equal(/<p><math[^>]*display="block"/.test(html), false);
+});
+
+test("leaves an unfinished formula as text while streaming", () => {
+  const html = util.renderMarkdown("开始 $$x=\\frac{1}{2", { streaming: true, math: () => "<math/>" });
+  assert.equal(html.includes("<math"), false);
+  assert.match(html, /\$\$x=/);
+});
+
 test("formats the note heading in local time", () => {
   assert.equal(util.formatNoteTime(new Date(2026, 10, 3, 0, 20)), "2026-11-03 00:20");
 });

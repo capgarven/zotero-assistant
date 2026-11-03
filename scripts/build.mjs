@@ -203,8 +203,6 @@ const required = [
   "prefs.js",
   "content/pane.css",
   "content/preferences.xhtml",
-  "content/service.xhtml",
-  "content/service.js",
   "content/scripts/util.js",
   "content/scripts/context.js",
   "content/scripts/ai.js",

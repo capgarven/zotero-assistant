@@ -241,11 +241,108 @@ var ZoteroAssistantAI = (function () {
           omitTemperature: true,
         });
       }
+      if (options.hasFiles && error && (error.status === 400 || error.status === 413)) {
+        throw new Error(
+          "The service did not accept the PDF (" + error.status + "). Pick a model that reads PDF files, or switch the source to Markdown." +
+            (error.detail ? " " + error.detail : ""),
+        );
+      }
       if (error && /failed to fetch|networkerror|load failed/i.test(String(error.message))) {
         throw new Error("Could not reach the API. Check the endpoint, the network, or whether the local model is running.");
       }
       throw error;
     }
+  }
+
+  var encoded = new Map();
+
+  function base64(binary) {
+    if (typeof btoa === "function") return btoa(binary);
+    return Zotero.getMainWindow().btoa(binary);
+  }
+
+  async function pdfPart(file) {
+    var stamp = "";
+    try {
+      stamp = String(Zotero.File.pathToFile(file.path).lastModifiedTime);
+    } catch (error) {}
+    var key = file.path + "@" + stamp;
+    if (!encoded.has(key)) {
+      var binary = await Zotero.File.getBinaryContentsAsync(file.path);
+      if (!binary) throw new Error("Could not read " + file.name + ".");
+      encoded.set(key, "data:application/pdf;base64," + base64(binary));
+      while (encoded.size > 12) encoded.delete(encoded.keys().next().value);
+    }
+    return { type: "file", file: { filename: file.name, file_data: encoded.get(key) } };
+  }
+
+  function filesEndpoint(apiBase) {
+    return ZoteroAssistantUtil.normalizeEndpoint(apiBase).replace(/\/chat\/completions$/i, "/files");
+  }
+
+  async function responseError(response) {
+    var raw = "";
+    try {
+      raw = await response.text();
+    } catch (error) {}
+    return statusError(response.status, raw);
+  }
+
+  async function extractedText(prefs, file, signal) {
+    var cachePath = file.path + ".kimi.zassistant.md";
+    var cache = Zotero.File.pathToFile(cachePath);
+    var pdf = Zotero.File.pathToFile(file.path);
+    if (cache.exists() && cache.lastModifiedTime >= pdf.lastModifiedTime) {
+      var cached = String((await Zotero.File.getContentsAsync(cachePath, "UTF-8")) || "");
+      if (cached.trim()) return cached;
+    }
+    var win = Zotero.getMainWindow();
+    var base = filesEndpoint(prefs.apiBase);
+    var auth = { Authorization: "Bearer " + prefs.apiKey };
+    var form = new win.FormData();
+    form.append("purpose", "file-extract");
+    form.append("file", new win.File([await win.IOUtils.read(file.path)], file.name, { type: "application/pdf" }));
+    var started = Date.now();
+    var upload = await win.fetch(base, { method: "POST", headers: auth, body: form });
+    if (!upload.ok) throw await responseError(upload);
+    var uploaded = await upload.json();
+    if (signal && signal.aborted) throw aborted();
+    var fileURL = base + "/" + encodeURIComponent(uploaded.id);
+    var text = "";
+    try {
+      var response = await win.fetch(fileURL + "/content", { headers: auth });
+      if (!response.ok) throw await responseError(response);
+      var raw = await response.text();
+      text = raw;
+      try {
+        var parsed = JSON.parse(raw);
+        if (parsed && typeof parsed.content === "string") text = parsed.content;
+      } catch (error) {}
+    } finally {
+      win.fetch(fileURL, { method: "DELETE", headers: auth }).catch(function () {});
+    }
+    if (!String(text).trim()) throw new Error("The service returned no text for " + file.name + ".");
+    ZoteroAssistantUtil.log("file-extract: " + file.name + ", " + text.length + " chars in " + (Date.now() - started) + " ms");
+    await Zotero.File.putContentsAsync(cachePath, text);
+    return text;
+  }
+
+  async function withPdfFiles(messages, files, prefs, signal) {
+    if (!files || !files.length) return messages;
+    if (prefs && prefs.pdfTransport === "extract") {
+      var extracted = [];
+      for (var j = 0; j < files.length; j += 1) {
+        if (signal && signal.aborted) throw aborted();
+        extracted.push({
+          role: "system",
+          content: "Content of the PDF file \"" + files[j].name + "\":\n\n" + (await extractedText(prefs, files[j], signal)),
+        });
+      }
+      return messages.slice(0, 1).concat(extracted, messages.slice(1));
+    }
+    var parts = [];
+    for (var i = 0; i < files.length; i += 1) parts.push(await pdfPart(files[i]));
+    return ZoteroAssistantUtil.attachToFirstUser(messages, parts);
   }
 
   async function testConnection(prefs) {
@@ -259,6 +356,7 @@ var ZoteroAssistantAI = (function () {
 
   return {
     complete: complete,
+    withPdfFiles: withPdfFiles,
     testConnection: testConnection,
   };
 })();

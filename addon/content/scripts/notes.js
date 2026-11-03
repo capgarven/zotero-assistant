@@ -47,6 +47,27 @@ var ZoteroAssistantNotes = (function () {
     };
   }
 
+  async function locateCollection(context) {
+    var dir = Zotero.DataDirectory && Zotero.DataDirectory.dir;
+    if (!dir) return { ok: false, message: "The Zotero data folder could not be found." };
+    var folder = fileFor(dir);
+    folder.append("zassistant");
+    folder.append("collections");
+    var safe = String(context.title || "collection")
+      .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 60);
+    folder.append((safe || "collection") + " (" + context.collectionKey + ")");
+    if (!folder.exists()) folder.create(Components.interfaces.nsIFile.DIRECTORY_TYPE, 0o755);
+    return {
+      ok: true,
+      filePath: "",
+      directory: folder.path,
+      fileName: "Collection: " + context.title,
+    };
+  }
+
   function listMarkdown(directory) {
     var folder = fileFor(directory);
     if (!folder.exists() || !folder.isDirectory()) return [];
@@ -161,6 +182,7 @@ var ZoteroAssistantNotes = (function () {
   return {
     PRIMARY_NAME: PRIMARY_NAME,
     locate: locate,
+    locateCollection: locateCollection,
     listMarkdown: listMarkdown,
     readMarkdown: readMarkdown,
     writeRound: writeRound,

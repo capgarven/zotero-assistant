@@ -3,17 +3,30 @@
 </linkset>
 <vbox id="zotero-prefpane-zassistant" onload="Zotero.ZoteroAssistant.onPrefsLoad(event)">
   <groupbox>
-    <label><html:h2>Service</html:h2></label>
-    <hbox align="center">
-      <label value="Service" style="width: 110px"/>
-      <menulist id="za-service">
+    <label><html:h2>Models</html:h2></label>
+    <description style="margin-bottom: 8px; color: var(--fill-secondary);">
+      Save as many models as you need, each with its own endpoint, model, and secret. Switch between them in the pane. When the source is PDF, Zassistant answers with a model that has "Reads PDF files" checked.
+    </description>
+    <hbox align="start">
+      <html:select id="za-profiles" size="7" style="width: 300px; min-height: 130px"/>
+      <vbox style="margin-left: 8px">
+        <button id="za-add" label="Add"/>
+        <button id="za-remove" label="Remove"/>
+      </vbox>
+    </hbox>
+    <hbox align="center" style="margin-top: 12px">
+      <label value="Name" style="width: 110px"/>
+      <html:input id="za-name" type="text" style="width: 420px"/>
+    </hbox>
+    <hbox align="center" style="margin-top: 8px">
+      <label value="Provider" style="width: 110px"/>
+      <menulist id="za-provider">
         <menupopup>
           <menuitem label="DeepSeek" value="deepseek"/>
           <menuitem label="OpenAI" value="openai"/>
           <menuitem label="Qwen" value="qwen"/>
           <menuitem label="Kimi" value="kimi"/>
           <menuitem label="Gemini" value="gemini"/>
-          <menuitem label="Ollama" value="ollama"/>
           <menuitem label="Custom" value="custom"/>
         </menupopup>
       </menulist>
@@ -26,9 +39,10 @@
       <label value="Model" style="width: 110px"/>
       <html:input id="za-model" type="text" style="width: 420px"/>
     </hbox>
+    <label id="za-model-hint" value="" style="margin-left: 114px; color: var(--fill-secondary);"/>
     <hbox align="center" style="margin-top: 8px">
       <label value="Secret" style="width: 110px"/>
-      <html:input id="za-secret" type="text" style="width: 420px"/>
+      <html:input id="za-secret" type="password" style="width: 420px"/>
     </hbox>
     <hbox align="center" style="margin-top: 8px">
       <label value="Temperature" style="width: 110px"/>
@@ -36,15 +50,16 @@
       <button id="za-test" label="Test" style="margin-left: 12px"/>
       <label id="za-status" value="" style="margin-left: 8px"/>
     </hbox>
-    <label
-      value="DeepSeek endpoint: https://api.deepseek.com/chat/completions. Models: deepseek-v4-pro, deepseek-flash."
-      style="margin-top: 8px; color: var(--fill-secondary);"
-    />
+    <hbox align="center" style="margin-top: 8px">
+      <label value="" style="width: 110px"/>
+      <checkbox id="za-pdf" label="Reads PDF files"/>
+    </hbox>
+    <description id="za-pdf-hint" style="margin-left: 114px; color: var(--fill-secondary);"/>
   </groupbox>
   <groupbox>
     <label><html:h2>Prompt</html:h2></label>
     <description style="margin-bottom: 6px; color: var(--fill-secondary);">
-      This instruction is sent with the paper. Opening Zassistant converts the PDF to Markdown and appends that Markdown after the prompt.
+      This instruction is sent with the paper or collection. The source picker in the pane chooses what follows it: the paper converted to Markdown, or the original PDF file.
     </description>
     <html:textarea id="za-prompt" rows="7" style="width: 100%"/>
   </groupbox>

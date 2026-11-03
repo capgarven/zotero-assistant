@@ -7,18 +7,21 @@ var ZoteroAssistantMain = (function () {
   var registeredPaneID = "";
 
   var PRESETS = [
-    { id: "deepseek", label: "DeepSeek", apiBase: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-pro", models: ["deepseek-v4-pro", "deepseek-flash"] },
-    { id: "openai", label: "OpenAI", apiBase: "https://api.openai.com/v1/chat/completions", model: "gpt-6.1-sol", models: ["gpt-6.1-sol", "gpt-6-luna"] },
-    { id: "qwen", label: "Qwen", apiBase: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", model: "qwen3.8-max", models: ["qwen3.8-max", "qwen3.7-plus"] },
-    { id: "kimi", label: "Kimi", apiBase: "https://api.moonshot.ai/v1/chat/completions", model: "kimi-k3.1-pro", models: ["kimi-k3.1-pro", "kimi-k3"] },
-    { id: "gemini", label: "Gemini", apiBase: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", model: "gemini-3.8-flash", models: ["gemini-3.8-flash"] },
-    { id: "ollama", label: "Ollama", apiBase: "http://127.0.0.1:11434/v1", model: "llama3.1", models: ["llama3.1"] },
-    { id: "custom", label: "Custom", apiBase: "", model: "", models: [] },
+    { id: "deepseek", label: "DeepSeek", apiBase: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-pro", models: ["deepseek-v4-pro", "deepseek-flash"], pdf: "" },
+    { id: "openai", label: "OpenAI", apiBase: "https://api.openai.com/v1/chat/completions", model: "gpt-6.1-sol", models: ["gpt-6.1-sol", "gpt-6-luna"], pdf: "file" },
+    { id: "qwen", label: "Qwen", apiBase: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", model: "qwen3.8-max", models: ["qwen3.8-max", "qwen3.8-flash", "qwen3.7-plus"], pdf: "file" },
+    { id: "kimi", label: "Kimi", apiBase: "https://api.moonshot.ai/v1/chat/completions", model: "kimi-k3", models: ["kimi-k3", "kimi-k3.1-pro"], pdf: "extract" },
+    { id: "gemini", label: "Gemini", apiBase: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", model: "gemini-3.8-flash", models: ["gemini-3.8-flash"], pdf: "" },
+    { id: "custom", label: "Custom", apiBase: "", model: "", models: [], pdf: "file" },
   ];
 
   function readPref(name, fallback) {
     var value = Zotero.Prefs.get(PREFIX + name, true);
     return value === undefined || value === null ? fallback : value;
+  }
+
+  function writePref(name, value) {
+    Zotero.Prefs.set(PREFIX + name, value, true);
   }
 
   function asBool(value, fallback) {
@@ -39,142 +42,287 @@ var ZoteroAssistantMain = (function () {
     return PRESETS[PRESETS.length - 1];
   }
 
-  function parseObject(value) {
-    if (!value || typeof value !== "string") return {};
+  function parseJSON(value, fallback) {
+    if (!value || typeof value !== "string") return fallback;
     try {
       var parsed = JSON.parse(value);
-      return parsed && typeof parsed === "object" ? parsed : {};
+      return parsed && typeof parsed === "object" ? parsed : fallback;
     } catch (error) {
-      return {};
+      return fallback;
     }
   }
 
-  function selectedServiceId() {
-    return String(readPref("service", "deepseek") || "deepseek");
-  }
-
   function readSecrets() {
-    return parseObject(String(readPref("secrets", "{}") || "{}"));
+    return parseJSON(String(readPref("secrets", "{}") || "{}"), {});
   }
 
   function writeSecrets(secrets) {
-    Zotero.Prefs.set(PREFIX + "secrets", JSON.stringify(secrets), true);
+    writePref("secrets", JSON.stringify(secrets));
   }
 
-  function migrateLegacy() {
-    var selected = selectedServiceId();
+  function newProfileId() {
+    return "m" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  }
+
+  function normalizeProfile(raw) {
+    var provider = presetById(raw && raw.provider);
+    var model = String((raw && raw.model) || "").trim();
+    return {
+      id: String((raw && raw.id) || newProfileId()),
+      name: String((raw && raw.name) || "").trim() || model || provider.label,
+      provider: provider.id,
+      apiBase: String((raw && raw.apiBase) || "").trim(),
+      model: model,
+      temperature: clamp(raw && raw.temperature, 0, 2, 0.2),
+      pdf: raw && raw.pdf !== undefined ? !!raw.pdf : !!provider.pdf,
+    };
+  }
+
+  function legacyServiceProfiles() {
     var secrets = readSecrets();
+    var selected = String(readPref("service", "deepseek") || "deepseek");
     var legacyKey = String(readPref("apiKey", "") || "");
     if (legacyKey && typeof secrets[selected] !== "string") {
       secrets[selected] = legacyKey;
       writeSecrets(secrets);
     }
-    var legacyBase = String(readPref("apiBase", "") || "");
-    var legacyModel = String(readPref("model", "") || "");
-    var legacyTemperature = readPref("temperature", "");
-    if (legacyBase && !readPref("service." + selected + ".endPoint", "")) {
-      Zotero.Prefs.set(PREFIX + "service." + selected + ".endPoint", legacyBase, true);
-    }
-    if (legacyModel && !readPref("service." + selected + ".model", "")) {
-      Zotero.Prefs.set(PREFIX + "service." + selected + ".model", legacyModel, true);
-    }
-    if (
-      legacyTemperature !== "" &&
-      legacyTemperature !== undefined &&
-      legacyTemperature !== null &&
-      !readPref("service." + selected + ".temperature", "")
-    ) {
-      Zotero.Prefs.set(PREFIX + "service." + selected + ".temperature", String(legacyTemperature), true);
-    }
+    var list = [];
+    ["deepseek", "openai", "qwen", "kimi", "gemini", "ollama", "custom"].forEach(function (id) {
+      var base = String(readPref("service." + id + ".endPoint", "") || "");
+      var model = String(readPref("service." + id + ".model", "") || "");
+      if (id === selected) {
+        base = base || String(readPref("apiBase", "") || "");
+        model = model || String(readPref("model", "") || "");
+      }
+      if (!secrets[id] && !base && id !== selected) return;
+      var preset = presetById(id === "ollama" ? "custom" : id);
+      list.push(
+        normalizeProfile({
+          id: id,
+          name: preset.id === "custom" ? model || "Custom" : preset.label + " " + (model || preset.model),
+          provider: preset.id,
+          apiBase: base || preset.apiBase,
+          model: model || preset.model,
+          temperature: readPref("service." + id + ".temperature", "0.2"),
+          pdf: !!preset.pdf,
+        }),
+      );
+    });
+    return { list: list, selected: selected };
   }
 
-  function getServiceSecret(serviceId) {
-    migrateLegacy();
-    var secrets = readSecrets();
-    var saved = secrets[serviceId];
-    if (typeof saved === "string" && saved) return saved;
-    if (String(serviceId || "") === selectedServiceId()) {
-      var legacy = String(readPref("apiKey", "") || "");
-      if (legacy) return legacy;
-    }
-    return "";
+  function readProfiles() {
+    var saved = parseJSON(String(readPref("profiles", "") || ""), null);
+    if (Array.isArray(saved) && saved.length) return saved.map(normalizeProfile);
+    var legacy = legacyServiceProfiles();
+    var list = legacy.list.length ? legacy.list : [defaultProfile("deepseek")];
+    writeProfiles(list);
+    var active = list.find(function (profile) {
+      return profile.id === legacy.selected;
+    });
+    writePref("activeProfile", (active || list[0]).id);
+    return list;
   }
 
-  function setServiceSecret(serviceId, secret) {
-    var id = String(serviceId || "custom");
+  function writeProfiles(list) {
+    writePref("profiles", JSON.stringify(list.map(normalizeProfile)));
+  }
+
+  function defaultProfile(providerId) {
+    var preset = presetById(providerId);
+    return normalizeProfile({
+      id: newProfileId(),
+      name: preset.id === "custom" ? "Custom" : preset.label + " " + preset.model,
+      provider: preset.id,
+      apiBase: preset.apiBase,
+      model: preset.model,
+      temperature: 0.2,
+      pdf: !!preset.pdf,
+    });
+  }
+
+  function activeProfileId() {
+    var list = readProfiles();
+    var id = String(readPref("activeProfile", "") || "");
+    return list.some(function (profile) {
+      return profile.id === id;
+    })
+      ? id
+      : list[0].id;
+  }
+
+  function profileById(id) {
+    var list = readProfiles();
+    return (
+      list.find(function (profile) {
+        return profile.id === id;
+      }) || list[0]
+    );
+  }
+
+  function secretFor(id) {
+    var value = readSecrets()[id];
+    return typeof value === "string" ? value : "";
+  }
+
+  function isLocal(apiBase) {
+    return /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/i.test(String(apiBase || ""));
+  }
+
+  function getProfiles() {
     var secrets = readSecrets();
-    secrets[id] = String(secret || "").trim();
+    return readProfiles().map(function (profile) {
+      var copy = Object.assign({}, profile);
+      copy.hasKey = !!secrets[profile.id] || isLocal(profile.apiBase);
+      copy.providerLabel = presetById(profile.provider).label;
+      return copy;
+    });
+  }
+
+  function getProfile(id) {
+    var profile = Object.assign({}, profileById(id));
+    profile.apiKey = secretFor(profile.id);
+    return profile;
+  }
+
+  function saveProfile(input) {
+    var list = readProfiles();
+    var profile = normalizeProfile(input);
+    var index = list.findIndex(function (entry) {
+      return entry.id === profile.id;
+    });
+    if (index === -1) list.push(profile);
+    else list[index] = profile;
+    writeProfiles(list);
+    if (input.apiKey !== undefined) {
+      var secrets = readSecrets();
+      secrets[profile.id] = String(input.apiKey || "").trim();
+      writeSecrets(secrets);
+    }
+    return profile;
+  }
+
+  function addProfile(providerId) {
+    var profile = defaultProfile(providerId || "deepseek");
+    var list = readProfiles();
+    list.push(profile);
+    writeProfiles(list);
+    return profile;
+  }
+
+  function removeProfile(id) {
+    var list = readProfiles();
+    if (list.length <= 1) throw new Error("Keep at least one model.");
+    writeProfiles(
+      list.filter(function (profile) {
+        return profile.id !== id;
+      }),
+    );
+    var secrets = readSecrets();
+    delete secrets[id];
     writeSecrets(secrets);
-    if (id === selectedServiceId()) Zotero.Prefs.set(PREFIX + "apiKey", secrets[id], true);
+    if (String(readPref("activeProfile", "")) === id) writePref("activeProfile", readProfiles()[0].id);
   }
 
-  function setSelectedService(serviceId) {
-    Zotero.Prefs.set(PREFIX + "service", String(serviceId || "custom"), true);
-  }
-
-  function setServiceConfig(serviceId, config) {
-    var id = String(serviceId || "custom");
-    var apiBase = String((config && config.apiBase) || "").trim();
-    var model = String((config && config.model) || "").trim();
-    var temperature = String(clamp(config && config.temperature, 0, 2, 0.2));
-    Zotero.Prefs.set(PREFIX + "service." + id + ".endPoint", apiBase, true);
-    Zotero.Prefs.set(PREFIX + "service." + id + ".model", model, true);
-    Zotero.Prefs.set(PREFIX + "service." + id + ".temperature", temperature, true);
-    if (id === selectedServiceId()) {
-      Zotero.Prefs.set(PREFIX + "apiBase", apiBase, true);
-      Zotero.Prefs.set(PREFIX + "model", model, true);
-      Zotero.Prefs.set(PREFIX + "temperature", temperature, true);
-    }
+  function setActiveProfile(id) {
+    writePref("activeProfile", String(profileById(id).id));
   }
 
   function readingPrefs() {
     var prompt = String(readPref("prompt", DEFAULT_PROMPT) || "");
     return {
       maxContextChars: Math.round(clamp(readPref("maxContextChars", 600000), 600000, 2000000, 600000)),
-      includeFulltext: true,
       prompt: prompt.trim() || DEFAULT_PROMPT,
+      source: String(readPref("source", "markdown")) === "pdf" ? "pdf" : "markdown",
+      deepCollections: asBool(readPref("deepCollections", false), false),
     };
   }
 
-  function getServicePrefs(serviceId) {
-    var id = String(serviceId || selectedServiceId());
-    var preset = presetById(id);
+  function prefsFor(profile) {
+    var preset = presetById(profile.provider);
     var reading = readingPrefs();
-    var apiBase = String(readPref("service." + id + ".endPoint", "") || "");
-    var model = String(readPref("service." + id + ".model", "") || "");
-    var temperature = readPref("service." + id + ".temperature", "");
-    if (!apiBase) apiBase = preset.apiBase || "";
-    if (!model) model = preset.model || "";
-    if (temperature === "" || temperature === undefined || temperature === null) temperature = "0.2";
     return {
-      service: id,
-      apiBase: apiBase,
-      apiKey: getServiceSecret(id),
-      model: model,
-      temperature: clamp(temperature, 0, 2, 0.2),
+      profileId: profile.id,
+      service: preset.id,
+      serviceLabel: profile.name,
+      providerLabel: preset.label,
+      apiBase: profile.apiBase || preset.apiBase,
+      apiKey: secretFor(profile.id),
+      model: profile.model || preset.model,
+      temperature: profile.temperature,
+      supportsPdf: !!profile.pdf,
+      pdfTransport: profile.pdf ? (preset.pdf === "extract" ? "extract" : "file") : "",
+      localEndpoint: isLocal(profile.apiBase || preset.apiBase),
       maxContextChars: reading.maxContextChars,
-      includeFulltext: reading.includeFulltext,
       prompt: reading.prompt,
-      models: preset.models ? preset.models.slice() : [],
+      source: reading.source,
+      deepCollections: reading.deepCollections,
     };
   }
 
   function getPrefs() {
-    return getServicePrefs(selectedServiceId());
+    return prefsFor(profileById(activeProfileId()));
   }
 
-  function setPrefs(prefs) {
-    var id = String(prefs.service || selectedServiceId() || "custom");
-    setSelectedService(id);
-    setServiceConfig(id, prefs);
-    setServiceSecret(id, prefs.apiKey || "");
-    try {
-      Zotero.Prefs.clear(PREFIX + "includeFulltext", true);
-    } catch (error) {}
-    if (prefs.prompt !== undefined) {
-      Zotero.Prefs.set(PREFIX + "prompt", String(prefs.prompt || ""), true);
+  function usable(profile, secrets) {
+    var preset = presetById(profile.provider);
+    var base = profile.apiBase || preset.apiBase;
+    return !!(base && (profile.model || preset.model) && (secrets[profile.id] || isLocal(base)));
+  }
+
+  function pdfFallback(active) {
+    var secrets = readSecrets();
+    if (active.pdf && usable(active, secrets)) return active;
+    return (
+      readProfiles().find(function (profile) {
+        return profile.pdf && usable(profile, secrets);
+      }) || null
+    );
+  }
+
+  function dropEmptyProfiles() {
+    var secrets = readSecrets();
+    var list = readProfiles();
+    var kept = list.filter(function (profile) {
+      return profile.apiBase || profile.model;
+    });
+    if (!kept.length || kept.length === list.length) return;
+    writeProfiles(kept);
+    list.forEach(function (profile) {
+      if (kept.indexOf(profile) === -1) delete secrets[profile.id];
+    });
+    writeSecrets(secrets);
+    if (!kept.some(function (profile) { return profile.id === String(readPref("activeProfile", "")); })) {
+      writePref("activeProfile", kept[0].id);
     }
-    return getPrefs();
+  }
+
+  function getChatPrefs() {
+    var active = profileById(activeProfileId());
+    var reading = readingPrefs();
+    var chosen = (reading.source === "pdf" && pdfFallback(active)) || active;
+    var prefs = prefsFor(chosen);
+    prefs.effectiveSource = reading.source === "pdf" && chosen.pdf && usable(chosen, readSecrets()) ? "pdf" : "markdown";
+    prefs.switchedFrom = chosen.id !== active.id ? active.name : "";
+    prefs.anyPdf = !!pdfFallback(active);
+    return prefs;
+  }
+
+  function setSource(source) {
+    var value = source === "pdf" ? "pdf" : "markdown";
+    writePref("source", value);
+    if (value === "pdf") {
+      var choice = pdfFallback(profileById(activeProfileId()));
+      if (choice) setActiveProfile(choice.id);
+    }
+  }
+
+  function setDeepCollections(value) {
+    writePref("deepCollections", !!value);
+  }
+
+  function setPrompt(text) {
+    writePref("prompt", String(text || ""));
   }
 
   function installWindow(win) {
@@ -315,7 +463,8 @@ var ZoteroAssistantMain = (function () {
       Zotero.logError(error);
     }
     try {
-      migrateLegacy();
+      readProfiles();
+      dropEmptyProfiles();
       Zotero.Prefs.clear(PREFIX + "includeFulltext", true);
     } catch (error) {
       Zotero.logError(error);
@@ -332,7 +481,8 @@ var ZoteroAssistantMain = (function () {
     }
     Zotero.getMainWindows().forEach(installWindow);
     ZoteroAssistantUtil.log(
-      "startup, AbortController " + (typeof AbortController) + ", setTimeout " + (typeof setTimeout),
+      "startup, " + readProfiles().length + " models, active " + activeProfileId() +
+        ", math " + (typeof ZoteroAssistantKatex !== "undefined" && ZoteroAssistantKatex ? "on" : "off"),
     );
   }
 
@@ -352,12 +502,20 @@ var ZoteroAssistantMain = (function () {
   Zotero.ZoteroAssistant = {
     PRESETS: PRESETS,
     getPrefs: getPrefs,
-    getServicePrefs: getServicePrefs,
-    setPrefs: setPrefs,
-    setSelectedService: setSelectedService,
-    setServiceSecret: setServiceSecret,
-    setServiceConfig: setServiceConfig,
-    migrateLegacy: migrateLegacy,
+    getChatPrefs: getChatPrefs,
+    getProfiles: getProfiles,
+    getProfile: getProfile,
+    saveProfile: saveProfile,
+    addProfile: addProfile,
+    removeProfile: removeProfile,
+    activeProfileId: activeProfileId,
+    setActiveProfile: setActiveProfile,
+    prefsForProfile: function (id) {
+      return prefsFor(profileById(id));
+    },
+    setSource: setSource,
+    setDeepCollections: setDeepCollections,
+    setPrompt: setPrompt,
     testConnection: function (prefs) {
       return ZoteroAssistantAI.testConnection(prefs || getPrefs());
     },

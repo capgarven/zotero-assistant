@@ -429,12 +429,106 @@ var ZoteroAssistantContext = (function () {
     };
   }
 
+  var collectionCache = new Map();
+
   function clearCache() {
     textCache.clear();
+    collectionCache.clear();
+  }
+
+  function pdfFileOf(attachment) {
+    var path = attachmentFilePath(attachment);
+    if (!/\.pdf$/i.test(path)) return null;
+    try {
+      var file = Zotero.File.pathToFile(path);
+      if (!file.exists() || file.isDirectory()) return null;
+      return { path: file.path, name: file.leafName, size: file.fileSize };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async function paperText(attachment, reader) {
+    var result = { text: "", error: "", markdown: false };
+    if (!attachment) return result;
+    var pdf = pdfFileOf(attachment);
+    if (pdf) {
+      var started = Date.now();
+      try {
+        result.text = await ZoteroAssistantUtil.withTimeout(
+          pdfToMarkdown(pdf.path),
+          600000,
+          "Timed out while converting the PDF",
+        );
+        result.markdown = !!result.text;
+        if (!result.text) result.error = "MarkItDown did not return any Markdown.";
+        ZoteroAssistantUtil.log(
+          "markdown: " + String(result.text || "").length + " chars in " + (Date.now() - started) + " ms",
+        );
+      } catch (error) {
+        result.error = error && error.message ? error.message : "Could not convert the PDF to Markdown.";
+        ZoteroAssistantUtil.log("markdown failed after " + (Date.now() - started) + " ms", error);
+      }
+    } else {
+      ZoteroAssistantUtil.log("no local PDF path for attachment " + attachment.id);
+    }
+    if (result.text) return result;
+    try {
+      var extracted = await ZoteroAssistantUtil.withTimeout(
+        attachmentText(attachment, reader),
+        45000,
+        "Timed out while reading the paper text",
+      );
+      result.text = extracted.text;
+      if (!result.error) result.error = extracted.error;
+    } catch (error) {
+      if (!result.error) {
+        result.error =
+          error && error.message === "Timed out while reading the paper text"
+            ? "Timed out while reading the paper text."
+            : "Could not read the paper text.";
+      }
+    }
+    return result;
+  }
+
+  function tagsOf(item) {
+    try {
+      return item
+        .getTags()
+        .map(function (tag) {
+          return tag.tag;
+        })
+        .join(", ");
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function yearOf(item) {
+    var date = field(item, "date");
+    return (String(date).match(/\d{4}/) || [date])[0] || "";
+  }
+
+  function paperMetadata(parent, attachment, location) {
+    return metadataBlock({
+      title: field(parent, "title") || field(attachment, "title") || "Untitled",
+      creators: creators(parent),
+      year: yearOf(parent),
+      itemType: itemTypeLabel(parent),
+      publication: field(parent, "publicationTitle"),
+      doi: field(parent, "DOI"),
+      url: field(parent, "url"),
+      tags: tagsOf(parent),
+      attachmentName: attachment ? field(attachment, "title") || attachment.attachmentFilename || "" : "",
+      location: location ? "p. " + location : "",
+      abstract: field(parent, "abstractNote"),
+    });
   }
 
   async function build(item, tabType, options) {
     var prefs = options.prefs;
+    var usePdf = options.source === "pdf";
     var inspected = inspectItem(item, tabType);
     var parent = inspected.parent;
     var attachment = inspected.attachment;
@@ -445,103 +539,44 @@ var ZoteroAssistantContext = (function () {
       } catch (error) {}
     }
     var title = field(parent, "title") || field(attachment, "title") || "Untitled";
-    var date = field(parent, "date");
-    var year = (String(date).match(/\d{4}/) || [date])[0] || "";
-    var tags = "";
-    try {
-      tags = parent
-        .getTags()
-        .map(function (tag) {
-          return tag.tag;
-        })
-        .join(", ");
-    } catch (error) {}
     var annotations = annotationText(attachment);
     var notes = noteText(parent);
     var selected = inspected.mode === "reader" ? selectedText(reader) : "";
-    var location = currentLocation(reader);
-    var metadata = metadataBlock({
-      title: title,
-      creators: creators(parent),
-      year: year,
-      itemType: itemTypeLabel(parent),
-      publication: field(parent, "publicationTitle"),
-      doi: field(parent, "DOI"),
-      url: field(parent, "url"),
-      tags: tags,
-      attachmentName: attachment ? field(attachment, "title") || attachment.attachmentFilename || "" : "",
-      location: location ? "p. " + location : "",
-      abstract: field(parent, "abstractNote"),
-    });
-    var fulltext = "";
-    var fulltextError = "";
-    var markdown = false;
-    if (attachment) {
-      var pdfPath = attachmentFilePath(attachment);
-      if (/\.pdf$/i.test(pdfPath)) {
-        var started = Date.now();
-        try {
-          fulltext = await ZoteroAssistantUtil.withTimeout(
-            pdfToMarkdown(pdfPath),
-            600000,
-            "Timed out while converting the PDF",
-          );
-          markdown = !!fulltext;
-          if (!fulltext) fulltextError = "MarkItDown did not return any Markdown.";
-          ZoteroAssistantUtil.log(
-            "markdown: " + String(fulltext || "").length + " chars in " + (Date.now() - started) + " ms",
-          );
-        } catch (error) {
-          fulltextError = error && error.message ? error.message : "Could not convert the PDF to Markdown.";
-          ZoteroAssistantUtil.log("markdown failed after " + (Date.now() - started) + " ms", error);
-        }
-      } else {
-        ZoteroAssistantUtil.log("no local PDF path for attachment " + attachment.id);
-      }
-      if (!fulltext) {
-        try {
-          var extracted = await ZoteroAssistantUtil.withTimeout(
-            attachmentText(attachment, reader),
-            45000,
-            "Timed out while reading the paper text",
-          );
-          fulltext = extracted.text;
-          if (!fulltextError) fulltextError = extracted.error;
-        } catch (error) {
-          if (!fulltextError) {
-            fulltextError = error && error.message === "Timed out while reading the paper text"
-              ? "Timed out while reading the paper text."
-              : "Could not read the paper text.";
-          }
-        }
-      }
-    }
+    var metadata = paperMetadata(parent, attachment, currentLocation(reader));
+    var pdf = usePdf ? pdfFileOf(attachment) : null;
+    var text = { text: "", error: "", markdown: false };
+    if (!pdf) text = await paperText(attachment, reader);
     var fitted = ZoteroAssistantUtil.fitContext({
       metadata: metadata,
       selectedText: selected,
       annotations: annotations.text,
       notes: notes.text,
-      fulltext: fulltext,
-      fulltextError: fulltextError,
+      fulltext: text.text,
+      fulltextError: text.error,
       maxChars: prefs.maxContextChars,
       prompt: prefs.prompt,
-      markdown: markdown,
+      markdown: text.markdown,
+      attachedPdf: pdf ? pdf.name : "",
     });
     var attachmentName = attachment
       ? attachment.attachmentFilename || field(attachment, "title") || "Attachment"
       : "";
     var systemPrompt = ZoteroAssistantUtil.buildSystemPrompt(fitted);
     ZoteroAssistantUtil.log(
-      "context: " + (markdown ? "markdown" : "fallback text") + " " + fitted.fulltext.length + " of " +
-        fitted.fulltextTotal + " chars, system " + systemPrompt.length + " chars" +
-        (fulltextError && !fitted.fulltext ? ", error: " + fulltextError : ""),
+      "context: " +
+        (pdf ? "pdf " + pdf.size + " bytes" : (text.markdown ? "markdown " : "fallback text ") +
+          fitted.fulltext.length + " of " + fitted.fulltextTotal + " chars") +
+        ", system " + systemPrompt.length + " chars" +
+        (text.error && !fitted.fulltext && !pdf ? ", error: " + text.error : ""),
     );
     return {
+      scope: "paper",
+      source: pdf ? "pdf" : "markdown",
       itemKey: inspected.itemKey,
       mode: inspected.mode,
       title: title,
       creators: creators(parent),
-      year: year,
+      year: yearOf(parent),
       attachment: attachment,
       attachmentName: attachmentName,
       parent: parent,
@@ -551,14 +586,183 @@ var ZoteroAssistantContext = (function () {
       fulltextChars: fitted.fulltext.length,
       fulltextTotal: fitted.fulltextTotal,
       fulltextTruncated: fitted.fulltextTruncated,
-      fulltextIncluded: true,
+      fulltextMissing: !pdf && !fitted.fulltext,
+      files: pdf ? [pdf] : [],
       metadata: metadata,
       systemPrompt: systemPrompt,
     };
   }
 
+  function libraries() {
+    try {
+      return Zotero.Libraries.getAll().filter(function (library) {
+        return library.libraryType !== "feed";
+      });
+    } catch (error) {
+      return [Zotero.Libraries.userLibrary].filter(Boolean);
+    }
+  }
+
+  function byName(a, b) {
+    return String(a.name || "").localeCompare(String(b.name || ""), undefined, { numeric: true });
+  }
+
+  function listCollections() {
+    var groups = [];
+    libraries().forEach(function (library) {
+      var rows = [];
+      function walk(collection, depth) {
+        rows.push({ id: collection.id, name: collection.name, depth: depth });
+        collection
+          .getChildCollections(false)
+          .slice()
+          .sort(byName)
+          .forEach(function (child) {
+            walk(child, depth + 1);
+          });
+      }
+      try {
+        Zotero.Collections.getByLibrary(library.libraryID, false)
+          .slice()
+          .sort(byName)
+          .forEach(function (collection) {
+            walk(collection, 0);
+          });
+      } catch (error) {
+        ZoteroAssistantUtil.log("list collections failed for library " + library.libraryID, error);
+      }
+      if (rows.length) groups.push({ libraryID: library.libraryID, name: library.name, collections: rows });
+    });
+    return groups;
+  }
+
+  function selectedCollectionID() {
+    try {
+      var pane = activeWindow() && activeWindow().ZoteroPane;
+      var collection = pane && pane.getSelectedCollection && pane.getSelectedCollection();
+      return collection ? collection.id : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function collectionPapers(collection, deep) {
+    var seen = new Set();
+    var papers = [];
+    function walk(current) {
+      current.getChildItems(false).forEach(function (item) {
+        var top = item.isRegularItem() || (item.isAttachment() && !item.parentItemID && isPdf(item));
+        if (!top || seen.has(item.id)) return;
+        seen.add(item.id);
+        papers.push(item);
+      });
+      if (deep) current.getChildCollections(false).forEach(walk);
+    }
+    walk(collection);
+    return papers.sort(function (a, b) {
+      return String(field(a, "title")).localeCompare(String(field(b, "title")), undefined, { numeric: true });
+    });
+  }
+
+  function collectionCount(collectionID, deep) {
+    var collection = Zotero.Collections.get(collectionID);
+    return collection ? collectionPapers(collection, deep).length : 0;
+  }
+
+  async function buildCollection(collectionID, options) {
+    var prefs = options.prefs;
+    var usePdf = options.source === "pdf";
+    var deep = !!options.deep;
+    var collection = Zotero.Collections.get(collectionID);
+    if (!collection) throw new Error("That collection no longer exists.");
+    var papers = collectionPapers(collection, deep);
+    var cacheKey = [collectionID, usePdf ? "pdf" : "md", deep ? "deep" : "flat", papers.map(function (item) {
+      return item.id + "@" + item.dateModified;
+    }).join(",")].join("|");
+    if (collectionCache.has(cacheKey)) return collectionCache.get(cacheKey);
+    var entries = new Array(papers.length);
+    var done = 0;
+    var next = 0;
+    async function worker() {
+      while (next < papers.length) {
+        var index = next++;
+        var item = papers[index];
+        var attachment = bestAttachment(item);
+        var parent = item;
+        var pdf = usePdf ? pdfFileOf(attachment) : null;
+        var text = { text: "", error: "", markdown: false };
+        if (!pdf && attachment) text = await paperText(attachment, null);
+        entries[index] = {
+          title: field(parent, "title") || field(attachment, "title") || "Untitled",
+          metadata: paperMetadata(parent, attachment, ""),
+          annotations: annotationText(attachment).text,
+          notes: item.isRegularItem() ? noteText(item).text : "",
+          text: text.text,
+          markdown: text.markdown,
+          error: text.error || (attachment ? "" : "This item has no attachment."),
+          pdf: pdf,
+        };
+        done += 1;
+        if (options.onProgress) options.onProgress(done, papers.length, entries[index].title);
+      }
+    }
+    await Promise.all([worker(), worker()]);
+    var files = [];
+    entries.forEach(function (entry) {
+      if (entry.pdf) {
+        files.push(entry.pdf);
+        entry.attachedPdf = entry.pdf.name;
+      }
+    });
+    var systemPrompt = ZoteroAssistantUtil.buildCollectionPrompt({
+      prompt: prefs.prompt,
+      name: collection.name,
+      papers: entries,
+    });
+    var textChars = entries.reduce(function (sum, entry) {
+      return sum + entry.text.length;
+    }, 0);
+    var missing = entries.filter(function (entry) {
+      return !entry.pdf && !entry.text;
+    }).length;
+    var bytes = files.reduce(function (sum, file) {
+      return sum + (file.size || 0);
+    }, 0);
+    ZoteroAssistantUtil.log(
+      "collection context: " + collection.name + ", " + entries.length + " papers, " + files.length +
+        " pdf (" + bytes + " bytes), text " + textChars + " chars, system " + systemPrompt.length + " chars",
+    );
+    var context = {
+      scope: "collection",
+      source: files.length ? "pdf" : "markdown",
+      collectionID: collectionID,
+      collectionKey: collection.key,
+      itemKey: "collection:" + collectionID,
+      title: collection.name,
+      paperCount: entries.length,
+      missingCount: missing,
+      files: files,
+      fileBytes: bytes,
+      systemChars: systemPrompt.length,
+      metadata:
+        "Collection: " + collection.name + "\n" +
+        entries
+          .map(function (entry, index) {
+            return "[" + (index + 1) + "] " + entry.title;
+          })
+          .join("\n"),
+      systemPrompt: systemPrompt,
+    };
+    collectionCache.set(cacheKey, context);
+    return context;
+  }
+
   return {
     build: build,
+    buildCollection: buildCollection,
+    listCollections: listCollections,
+    selectedCollectionID: selectedCollectionID,
+    collectionCount: collectionCount,
     clearCache: clearCache,
     inspectItem: inspectItem,
   };

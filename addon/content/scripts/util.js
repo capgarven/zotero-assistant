@@ -130,7 +130,12 @@ var ZoteroAssistantUtil = (function () {
       fulltextError: input.fulltextError || "",
       prompt: String(input.prompt || ""),
       markdown: !!input.markdown,
+      attachedPdf: String(input.attachedPdf || ""),
     };
+  }
+
+  function pdfNotice(name) {
+    return "The full paper is the PDF file \"" + name + "\". It is attached to the first user message, or its content follows in the next system message. Read it in full, including figures and tables.";
   }
 
   function buildSystemPrompt(fitted) {
@@ -158,6 +163,10 @@ var ZoteroAssistantUtil = (function () {
     if (fitted.notes) {
       lines.push("", "## Item notes", fitted.notes);
     }
+    if (fitted.attachedPdf) {
+      lines.push("", "## PDF", pdfNotice(fitted.attachedPdf));
+      return lines.join("\n");
+    }
     lines.push("", fitted.markdown ? "## Markdown" : "## Text");
     if (fitted.fulltext) {
       if (fitted.fulltextTruncated) {
@@ -174,6 +183,66 @@ var ZoteroAssistantUtil = (function () {
       lines.push(fitted.fulltextError || "The paper text is not available. Answer from the material above and say so.");
     }
     return lines.join("\n");
+  }
+
+  function buildCollectionPrompt(input) {
+    var papers = input.papers || [];
+    var lines = [];
+    var instruction = String(input.prompt || "").trim();
+    if (instruction) lines.push(instruction, "");
+    lines.push(
+      "You are answering about the Zotero collection \"" + (input.name || "Untitled") + "\", which holds " +
+        papers.length + " papers. Every paper in the collection is included below, numbered [1] to [" +
+        papers.length + "].",
+      "Use all of them. Cite papers by number, such as [2] or [1, 4]. Compare papers when the question asks for it. If no paper supports a claim, say so.",
+    );
+    if (papers.some(function (paper) { return paper.attachedPdf; })) {
+      lines.push("Some papers are given as PDF files, attached to the first user message or included as file content in the following system messages. Their file names are listed under each paper.");
+    }
+    papers.forEach(function (paper, index) {
+      lines.push("", "## [" + (index + 1) + "] " + (paper.title || "Untitled"), paper.metadata || "");
+      if (paper.annotations) lines.push("", "### Annotations", paper.annotations);
+      if (paper.notes) lines.push("", "### Item notes", paper.notes);
+      if (paper.attachedPdf) {
+        lines.push("", "### PDF", "Attached as \"" + paper.attachedPdf + "\".");
+      } else if (paper.text) {
+        lines.push("", paper.markdown ? "### Markdown" : "### Text", paper.text);
+      } else {
+        lines.push("", "### Text", paper.error || "The full text is not available. Use the record above.");
+      }
+    });
+    return lines.join("\n");
+  }
+
+  function attachToFirstUser(messages, parts) {
+    if (!parts || !parts.length) return messages;
+    var attached = false;
+    return messages.map(function (message) {
+      if (attached || message.role !== "user") return message;
+      attached = true;
+      return {
+        role: "user",
+        content: parts.concat([{ type: "text", text: textOf(message.content) }]),
+      };
+    });
+  }
+
+  function estimateTokens(chars) {
+    return Math.round((Number(chars) || 0) / 3.5);
+  }
+
+  function formatCount(value) {
+    var number = Number(value) || 0;
+    if (number >= 1000000) return (number / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
+    if (number >= 1000) return Math.round(number / 1000) + "k";
+    return String(number);
+  }
+
+  function formatBytes(size) {
+    var value = Number(size) || 0;
+    if (value < 1024) return value + " B";
+    if (value < 1024 * 1024) return Math.ceil(value / 1024) + " KB";
+    return (value / 1024 / 1024).toFixed(1) + " MB";
   }
 
   function buildSummaryPrompt(input) {
@@ -389,7 +458,43 @@ var ZoteroAssistantUtil = (function () {
     return html.join("");
   }
 
+  var MATH_PATTERN = /(`+)[\s\S]*?\1|\\\$|\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$(?=\S)((?:\\\$|[^$\n`])+?)(?<!\\)\$(?!\d)/g;
+
+  function extractMath(text, render, store) {
+    return text.replace(MATH_PATTERN, function (match, ticks, block, bracket, paren, inlineTex) {
+      if (ticks) return match;
+      if (match === "\\$") return "$";
+      if (inlineTex !== undefined && /\s$/.test(inlineTex)) return match;
+      var display = block !== undefined || bracket !== undefined;
+      var tex = [block, bracket, paren, inlineTex].find(function (value) {
+        return value !== undefined;
+      });
+      var html = "";
+      try {
+        html = render(String(tex).trim(), display);
+      } catch (error) {
+        html = "";
+      }
+      if (!html) return match;
+      store.push(html);
+      return "\uE000" + (store.length - 1) + "\uE001";
+    });
+  }
+
+  function restoreMath(html, store) {
+    if (!store.length) return html;
+    return html
+      .replace(/<p>\uE000(\d+)\uE001<\/p>/g, function (_match, index) {
+        return store[index];
+      })
+      .replace(/\uE000(\d+)\uE001/g, function (_match, index) {
+        return store[index];
+      });
+  }
+
   function renderMarkdown(source, options) {
+    var math = options && typeof options.math === "function" ? options.math : null;
+    var formulas = [];
     var text = String(source || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
     if (options && options.streaming) {
       var fences = text.split("```").length - 1;
@@ -421,14 +526,15 @@ var ZoteroAssistantUtil = (function () {
     });
     if (inFence) blocks.push({ type: "code", text: code.join("\n") });
     else flushProse();
-    return blocks
+    var html = blocks
       .map(function (block) {
         if (block.type === "code") {
           return "<pre><code>" + escapeHTML(block.text) + "</code></pre>";
         }
-        return renderProse(block.text);
+        return renderProse(math ? extractMath(block.text, math, formulas) : block.text);
       })
       .join("");
+    return restoreMath(html, formulas);
   }
 
   function timerHost() {
@@ -535,6 +641,11 @@ var ZoteroAssistantUtil = (function () {
     tailText: tailText,
     fitContext: fitContext,
     buildSystemPrompt: buildSystemPrompt,
+    buildCollectionPrompt: buildCollectionPrompt,
+    attachToFirstUser: attachToFirstUser,
+    estimateTokens: estimateTokens,
+    formatCount: formatCount,
+    formatBytes: formatBytes,
     buildSummaryPrompt: buildSummaryPrompt,
     formatNoteTime: formatNoteTime,
     renderNoteFile: renderNoteFile,

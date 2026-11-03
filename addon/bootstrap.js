@@ -26,6 +26,14 @@ async function startup({ id, version, rootURI }) {
     "content/scripts/prefsPane.js",
     "content/scripts/main.js",
   ];
+  const mathScope = {};
+  try {
+    Services.scriptloader.loadSubScript(base + "content/lib/katex.min.js", mathScope);
+  } catch (error) {
+    Zotero.logError(error);
+  }
+  globalThis.ZoteroAssistantKatex =
+    mathScope.katex || (typeof self !== "undefined" && self.katex) || globalThis.katex || null;
   for (const file of files) {
     Services.scriptloader.loadSubScript(base + file);
   }
