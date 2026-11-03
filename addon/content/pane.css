@@ -1,0 +1,387 @@
+.za-root,
+.za-root * {
+  box-sizing: border-box;
+}
+
+.za-root {
+  --za-ink: var(--fill-primary, #1d1c16);
+  --za-muted: var(--fill-secondary, #6f695f);
+  --za-line: var(--border-color, rgba(80, 60, 20, 0.16));
+  --za-paper: var(--material-background, transparent);
+  --za-accent: var(--color-accent, #2f6f4f);
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px 10px;
+  color: var(--za-ink);
+  background: var(--za-paper);
+  font: 12.5px/1.5 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.za-bar,
+.za-compose-row,
+.za-reader-bar,
+.za-tabs,
+.za-banner,
+.za-setting-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.za-bar {
+  justify-content: space-between;
+}
+
+.za-title,
+.za-reader-title {
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.za-title {
+  font-size: 14px;
+}
+
+.za-detail,
+.za-status,
+.za-privacy,
+.za-notes-intro,
+.za-empty,
+.za-reasoning {
+  color: var(--za-muted);
+}
+
+.za-detail,
+.za-notes-intro {
+  overflow-wrap: anywhere;
+}
+
+.za-status.is-error {
+  color: #9d2c2c;
+}
+
+.za-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.za-chip {
+  border: 1px solid var(--za-line);
+  border-radius: 999px;
+  padding: 0 7px;
+  color: var(--za-muted);
+}
+
+.za-tabs {
+  border-bottom: 1px solid var(--za-line);
+}
+
+.za-tab,
+.za-btn,
+.za-suggestion,
+.za-note-name {
+  appearance: none;
+  border: 1px solid var(--za-line);
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.za-tab {
+  border-bottom: 0;
+  border-radius: 5px 5px 0 0;
+}
+
+.za-tab.is-active,
+.za-btn-primary {
+  background: var(--za-accent);
+  border-color: var(--za-accent);
+  color: white;
+}
+
+.za-chat,
+.za-notes,
+.za-reader {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.za-dialog {
+  display: flex;
+  flex-direction: column;
+  min-height: 320px;
+  border: 1px solid var(--za-line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--za-ink) 3%, transparent);
+}
+
+.za-transcript,
+.za-note-list,
+.za-reader-body,
+.za-settings {
+  min-height: 0;
+  overflow: auto;
+}
+
+.za-transcript {
+  min-height: 210px;
+  max-height: 52vh;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.za-reader-body {
+  flex: 1;
+  padding-right: 2px;
+}
+
+.za-banner {
+  justify-content: space-between;
+  padding: 6px 8px;
+  border: 1px solid var(--za-line);
+  border-radius: 6px;
+}
+
+.za-msg {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  max-width: 92%;
+}
+
+.za-msg,
+.za-msg *,
+.za-reader-body,
+.za-reader-body * {
+  user-select: text;
+  -moz-user-select: text;
+  cursor: text;
+}
+
+.za-msg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.za-msg .za-copy {
+  appearance: none;
+  border: 1px solid var(--za-line);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--za-muted);
+  font: inherit;
+  font-size: 11px;
+  padding: 0 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.za-msg-label {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--za-muted);
+}
+
+.za-msg-user {
+  align-self: flex-end;
+  background: color-mix(in srgb, var(--za-accent) 16%, transparent);
+}
+
+.za-msg-assistant {
+  align-self: stretch;
+  max-width: 100%;
+  border: 1px solid var(--za-line);
+  background: var(--za-paper);
+  white-space: normal;
+}
+
+.za-reasoning {
+  margin-bottom: 6px;
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+
+.za-divider {
+  margin: 8px 0;
+  text-align: center;
+  color: var(--za-muted);
+  font-size: 12px;
+}
+
+.za-compose {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid var(--za-line);
+  background: var(--za-paper);
+}
+
+.za-input,
+.za-root textarea,
+.za-root select {
+  width: 100%;
+  border: 1px solid var(--za-line);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 6px 8px;
+}
+
+.za-root textarea {
+  resize: vertical;
+  min-height: 64px;
+  max-height: 140px;
+}
+
+.za-compose-row {
+  justify-content: flex-end;
+}
+
+.za-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  padding-bottom: 4px;
+}
+
+.za-field {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 6px;
+  align-items: center;
+}
+
+.za-check {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.za-privacy {
+  margin: 0;
+}
+
+.za-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.za-suggestion {
+  text-align: left;
+}
+
+.za-note-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--za-line);
+}
+
+.za-note-name {
+  border: 0;
+  padding: 0;
+  text-align: left;
+  color: var(--za-accent);
+}
+
+.za-note-size,
+.za-empty-line {
+  color: var(--za-muted);
+}
+
+.za-reader-title {
+  flex: 1;
+}
+
+.za-md.is-source {
+  white-space: pre-wrap;
+  font-family: Consolas, "Sarasa Mono SC", monospace;
+  font-size: 12px;
+}
+
+.za-md h1,
+.za-md h2,
+.za-md h3,
+.za-md p {
+  margin: 0 0 8px;
+}
+
+.za-md h1 { font-size: 16px; }
+.za-md h2 { font-size: 14px; }
+.za-md h3 { font-size: 13px; }
+
+.za-md ul,
+.za-md ol {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+
+.za-md pre {
+  overflow: auto;
+  padding: 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--za-ink) 6%, transparent);
+}
+
+.za-md code {
+  font-family: Consolas, "Sarasa Mono SC", monospace;
+  font-size: 12px;
+}
+
+.za-md blockquote {
+  margin: 0 0 8px;
+  padding-left: 8px;
+  border-left: 3px solid var(--za-line);
+  color: var(--za-muted);
+}
+
+.za-md table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 8px;
+}
+
+.za-md th,
+.za-md td {
+  border: 1px solid var(--za-line);
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.za-md a {
+  color: var(--za-accent);
+}
+
+.za-btn:focus-visible,
+.za-tab:focus-visible,
+.za-input:focus-visible,
+.za-root textarea:focus-visible {
+  outline: 2px solid var(--za-accent);
+  outline-offset: 1px;
+}

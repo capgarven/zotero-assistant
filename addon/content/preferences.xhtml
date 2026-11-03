@@ -1,0 +1,51 @@
+<linkset>
+  <html:link rel="localization" href="zotero-assistant.ftl"/>
+</linkset>
+<vbox id="zotero-prefpane-zassistant" onload="Zotero.ZoteroAssistant.onPrefsLoad(event)">
+  <groupbox>
+    <label><html:h2>Service</html:h2></label>
+    <hbox align="center">
+      <label value="Service" style="width: 110px"/>
+      <menulist id="za-service">
+        <menupopup>
+          <menuitem label="DeepSeek" value="deepseek"/>
+          <menuitem label="OpenAI" value="openai"/>
+          <menuitem label="Qwen" value="qwen"/>
+          <menuitem label="Kimi" value="kimi"/>
+          <menuitem label="Gemini" value="gemini"/>
+          <menuitem label="Ollama" value="ollama"/>
+          <menuitem label="Custom" value="custom"/>
+        </menupopup>
+      </menulist>
+    </hbox>
+    <hbox align="center" style="margin-top: 8px">
+      <label value="Endpoint" style="width: 110px"/>
+      <html:input id="za-endpoint" type="text" style="width: 420px"/>
+    </hbox>
+    <hbox align="center" style="margin-top: 8px">
+      <label value="Model" style="width: 110px"/>
+      <html:input id="za-model" type="text" style="width: 420px"/>
+    </hbox>
+    <hbox align="center" style="margin-top: 8px">
+      <label value="Secret" style="width: 110px"/>
+      <html:input id="za-secret" type="text" style="width: 420px"/>
+    </hbox>
+    <hbox align="center" style="margin-top: 8px">
+      <label value="Temperature" style="width: 110px"/>
+      <html:input id="za-temperature" type="number" min="0" max="2" step="0.1" style="width: 120px"/>
+      <button id="za-test" label="Test" style="margin-left: 12px"/>
+      <label id="za-status" value="" style="margin-left: 8px"/>
+    </hbox>
+    <label
+      value="DeepSeek endpoint: https://api.deepseek.com/chat/completions. Models: deepseek-v4-pro, deepseek-flash."
+      style="margin-top: 8px; color: var(--fill-secondary);"
+    />
+  </groupbox>
+  <groupbox>
+    <label><html:h2>Prompt</html:h2></label>
+    <description style="margin-bottom: 6px; color: var(--fill-secondary);">
+      This instruction is sent with the paper. Opening Zassistant converts the PDF to Markdown and appends that Markdown after the prompt.
+    </description>
+    <html:textarea id="za-prompt" rows="7" style="width: 100%"/>
+  </groupbox>
+</vbox>

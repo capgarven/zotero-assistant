@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
+<window
+  xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+  xmlns:html="http://www.w3.org/1999/xhtml"
+  title="Zassistant"
+  width="520"
+  height="240"
+>
+  <groupbox style="margin: 12px">
+    <label><html:h2 id="za-title">Service</html:h2></label>
+    <hbox align="center" style="margin-top: 8px">
+      <label value="Endpoint" style="width: 140px"/>
+      <html:input id="za-endpoint" type="text" style="width: 320px"/>
+    </hbox>
+    <hbox align="center" style="margin-top: 8px">
+      <label value="Model" style="width: 140px"/>
+      <menulist id="za-model" editable="true" style="width: 320px">
+        <menupopup id="za-model-popup"/>
+      </menulist>
+    </hbox>
+    <hbox align="center" style="margin-top: 8px">
+      <label value="Temperature" style="width: 140px"/>
+      <html:input id="za-temperature" type="number" min="0" max="2" step="0.1" style="width: 120px"/>
+    </hbox>
+    <label
+      value="Endpoint can be the service root or the full /chat/completions address."
+      style="margin-top: 8px; color: var(--fill-secondary);"
+    />
+    <hbox align="center" pack="end" style="margin-top: 16px">
+      <button id="za-cancel" label="Cancel"/>
+      <button id="za-save" label="Save" default="true"/>
+    </hbox>
+  </groupbox>
+  <script src="chrome://zoteroassistant/content/service.js"/>
+</window>

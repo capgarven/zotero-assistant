@@ -1,0 +1,19 @@
+{
+  "manifest_version": 2,
+  "name": "Zassistant",
+  "version": "1.0.0",
+  "description": "Ask an AI about the paper open in Zotero, and save the reading note as Markdown next to the PDF.",
+  "author": "Zassistant",
+  "icons": {
+    "48": "content/icons/icon48.png",
+    "96": "content/icons/icon96.png"
+  },
+  "applications": {
+    "zotero": {
+      "id": "zotero-assistant@local",
+      "update_url": "https://github.com/zotero-assistant/zotero-assistant/releases/download/release/update.json",
+      "strict_min_version": "10.0",
+      "strict_max_version": "10.0.*"
+    }
+  }
+}
