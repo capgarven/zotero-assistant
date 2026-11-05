@@ -13,7 +13,9 @@ Zassistant 是 Zotero 10 的条目面板插件。你可以就正在读的论文�
 ### 安装
 
 1. 安装 [Zotero 10](https://www.zotero.org/download/)。
-2. 安装 Python 和 MarkItDown：`pip install "markitdown[pdf]"`。插件会依次查找设置项 `extensions.zotero.zoteroassistant.python` 指定的 `python.exe`、常见的 Anaconda / Python 安装目录，以及 `PATH`。只用 PDF 模式时可以不装。
+2. 安装 Python 3.10 或更新版本，以及 MarkItDown：`python3 -m pip install "markitdown[pdf]"`（Windows 上是 `python -m pip install "markitdown[pdf]"`）。只用 PDF 模式时可以不装。
+   - 插件会自动查找已装好 MarkItDown 的 Python：Windows 上查 Anaconda / Miniconda 和 python.org 的安装目录；macOS 上查 Homebrew（`/opt/homebrew/bin`、`/usr/local/bin`）、python.org 安装包、conda、pyenv；最后查 `PATH`。
+   - 找不到或找错时，在 设置 → Zassistant → Markdown conversion 里填入 Python 的完整路径（macOS 上可在终端用 `which python3` 查看），或点 **Detect** 自动查找。
 3. 从 [Releases](https://github.com/capgarven/zotero-assistant/releases) 下载最新的 `zotero-assistant-<版本>.xpi`，或在本目录运行 `npm run build`，得到 `dist/zotero-assistant-1.0.1.xpi`。
 4. 在 Zotero 里打开「工具 → 插件」，点齿轮图标，选「从文件安装插件…」，选中这个 XPI，然后按提示重启。
 
@@ -98,7 +100,9 @@ Zassistant supports **Zotero 10** only.
 ### Install
 
 1. Install [Zotero 10](https://www.zotero.org/download/).
-2. Install Python and MarkItDown: `pip install "markitdown[pdf]"`. Zassistant looks for `python.exe` in the setting `extensions.zotero.zoteroassistant.python` first, then in common Anaconda and Python folders, then on `PATH`. You can skip this step if you only use PDF mode.
+2. Install Python 3.10 or newer and MarkItDown: `python3 -m pip install "markitdown[pdf]"` (on Windows, `python -m pip install "markitdown[pdf]"`). You can skip this step if you only use PDF mode.
+   - Zassistant looks for a Python that has MarkItDown installed. On Windows it checks the Anaconda, Miniconda, and python.org folders. On macOS it checks Homebrew (`/opt/homebrew/bin`, `/usr/local/bin`), the python.org installer, conda, and pyenv. Then it checks `PATH`.
+   - If it finds none, or the wrong one, enter the full Python path in Settings → Zassistant → Markdown conversion (on macOS, `which python3` in Terminal prints it), or click **Detect**.
 3. Download the latest `zotero-assistant-<version>.xpi` from [Releases](https://github.com/capgarven/zotero-assistant/releases), or run `npm run build` in this folder to get `dist/zotero-assistant-1.0.1.xpi`.
 4. In Zotero, open **Tools → Plugins**, click the gear icon, choose **Install Plugin From File…**, pick the XPI, and restart when asked.
 

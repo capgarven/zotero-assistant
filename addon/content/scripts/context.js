@@ -331,42 +331,166 @@ var ZoteroAssistantContext = (function () {
     return file.exists() && !file.isDirectory();
   }
 
-  function findPython() {
-    var candidates = [];
+  var PYTHON_PREF = "extensions.zotero.zoteroassistant.python";
+  var PYTHON_VERSIONS = ["314", "313", "312", "311", "310"];
+  var detectedPython = null;
+
+  function configuredPython() {
     try {
-      var configured = String(Zotero.Prefs.get("extensions.zotero.zoteroassistant.python", true) || "").trim();
-      if (configured) candidates.push(configured);
-    } catch (error) {}
-    candidates.push(
-      "D:\\anaconda3\\python.exe",
-      "C:\\ProgramData\\anaconda3\\python.exe",
-    );
-    try {
-      var env = Components.classes["@mozilla.org/process/environment;1"].getService(
-        Components.interfaces.nsIEnvironment,
-      );
-      var local = env.get("LOCALAPPDATA");
-      var profile = env.get("USERPROFILE");
-      ["Python313", "Python312", "Python311"].forEach(function (version) {
-        if (local) candidates.push(local + "\\Programs\\Python\\" + version + "\\python.exe");
-      });
-      if (profile) {
-        candidates.push(profile + "\\anaconda3\\python.exe", profile + "\\miniconda3\\python.exe");
-      }
-      String(env.get("PATH") || "")
-        .split(Zotero.isWin ? ";" : ":")
-        .forEach(function (dir) {
-          if (!dir) return;
-          candidates.push(dir.replace(/[\\/]+$/, "") + (Zotero.isWin ? "\\python.exe" : "/python3"));
-        });
-    } catch (error) {}
-    for (var i = 0; i < candidates.length; i += 1) {
-      if (/WindowsApps/i.test(candidates[i])) continue;
-      try {
-        if (fileExists(candidates[i])) return candidates[i];
-      } catch (error) {}
+      return String(Zotero.Prefs.get(PYTHON_PREF, true) || "").trim();
+    } catch (error) {
+      return "";
     }
-    return "";
+  }
+
+  function environment() {
+    try {
+      return Components.classes["@mozilla.org/process/environment;1"].getService(Components.interfaces.nsIEnvironment);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function windowsPythons(env) {
+    var local = env ? env.get("LOCALAPPDATA") : "";
+    var profile = env ? env.get("USERPROFILE") : "";
+    var list = ["D:\\anaconda3\\python.exe", "C:\\ProgramData\\anaconda3\\python.exe"];
+    PYTHON_VERSIONS.forEach(function (version) {
+      if (local) list.push(local + "\\Programs\\Python\\Python" + version + "\\python.exe");
+    });
+    if (profile) {
+      ["anaconda3", "miniconda3", "miniforge3"].forEach(function (name) {
+        list.push(profile + "\\" + name + "\\python.exe");
+      });
+    }
+    return list;
+  }
+
+  function unixPythons(env) {
+    var home = env ? env.get("HOME") : "";
+    var list = [];
+    if (Zotero.isMac) {
+      list.push("/opt/homebrew/bin/python3");
+      PYTHON_VERSIONS.forEach(function (version) {
+        var dotted = version[0] + "." + version.slice(1);
+        list.push("/Library/Frameworks/Python.framework/Versions/" + dotted + "/bin/python3");
+      });
+    }
+    list.push("/usr/local/bin/python3");
+    if (home) {
+      ["miniconda3", "anaconda3", "miniforge3", "mambaforge"].forEach(function (name) {
+        list.push(home + "/" + name + "/bin/python3");
+      });
+      list.push(home + "/.pyenv/shims/python3", home + "/.local/bin/python3");
+    }
+    ["/opt/anaconda3", "/opt/miniconda3", "/opt/homebrew/anaconda3", "/opt/homebrew/Caskroom/miniconda/base"].forEach(
+      function (root) {
+        list.push(root + "/bin/python3");
+      },
+    );
+    // On macOS /usr/bin/python3 is a stub that pops up an installer when the developer tools are missing.
+    list.push(Zotero.isMac ? "/Library/Developer/CommandLineTools/usr/bin/python3" : "/usr/bin/python3");
+    return list;
+  }
+
+  function pythonCandidates() {
+    var env = environment();
+    var list = Zotero.isWin ? windowsPythons(env) : unixPythons(env);
+    String((env && env.get("PATH")) || "")
+      .split(Zotero.isWin ? ";" : ":")
+      .forEach(function (dir) {
+        if (!dir) return;
+        dir = dir.replace(/[\\/]+$/, "");
+        if (Zotero.isWin) list.push(dir + "\\python.exe");
+        else if (!(Zotero.isMac && dir === "/usr/bin")) list.push(dir + "/python3");
+      });
+    var seen = new Set();
+    return list.filter(function (path) {
+      if (seen.has(path) || /WindowsApps/i.test(path)) return false;
+      seen.add(path);
+      try {
+        return fileExists(path);
+      } catch (error) {
+        return false;
+      }
+    });
+  }
+
+  function hasMarkItDownScript(python) {
+    try {
+      var dir = Zotero.File.pathToFile(python).parent;
+      var names = Zotero.isWin ? ["Scripts\\markitdown.exe", "markitdown.exe"] : ["markitdown"];
+      return names.some(function (name) {
+        var file = dir.clone();
+        name.split("\\").forEach(function (part) {
+          file.append(part);
+        });
+        return file.exists();
+      });
+    } catch (error) {
+      return false;
+    }
+  }
+
+  async function hasMarkItDown(python) {
+    try {
+      await Zotero.Utilities.Internal.exec(python, ["-c", "import markitdown"]);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  async function checkPython(path) {
+    var python = String(path || "").trim();
+    if (!python) return { ok: false, path: "", message: "No Python path was given." };
+    var exists = false;
+    try {
+      exists = fileExists(python);
+    } catch (error) {}
+    if (!exists) return { ok: false, path: python, message: "This file does not exist." };
+    if (!(await hasMarkItDown(python))) {
+      return {
+        ok: false,
+        path: python,
+        message: "MarkItDown is not installed for this Python. Run: " + python + " -m pip install 'markitdown[pdf]'",
+      };
+    }
+    return { ok: true, path: python, message: "MarkItDown is ready." };
+  }
+
+  async function detectPython() {
+    var candidates = pythonCandidates();
+    var ordered = candidates.filter(hasMarkItDownScript).concat(
+      candidates.filter(function (path) {
+        return !hasMarkItDownScript(path);
+      }),
+    );
+    for (var i = 0; i < ordered.length; i += 1) {
+      if (await hasMarkItDown(ordered[i])) return { ok: true, path: ordered[i], message: "MarkItDown is ready." };
+    }
+    if (ordered.length) {
+      return {
+        ok: false,
+        path: ordered[0],
+        message: "Python was found, but MarkItDown is not installed. Run: " + ordered[0] + " -m pip install 'markitdown[pdf]'",
+      };
+    }
+    return {
+      ok: false,
+      path: "",
+      message: "Python was not found. Install Python 3.10 or newer with MarkItDown, or set the Python path in Zassistant settings.",
+    };
+  }
+
+  async function findPython() {
+    var configured = configuredPython();
+    var cached = detectedPython && detectedPython.ok && detectedPython.configured === configured;
+    if (!cached) {
+      detectedPython = configured ? await checkPython(configured) : await detectPython();
+      detectedPython.configured = configured;
+    }
+    return detectedPython;
   }
 
   var conversions = new Map();
@@ -396,11 +520,11 @@ var ZoteroAssistantContext = (function () {
       var cached = await Zotero.File.getContentsAsync(output, "UTF-8");
       if (String(cached || "").trim()) return String(cached);
     }
-    var python = findPython();
-    if (!python) throw new Error("Python was not found, so the PDF could not be converted.");
+    var python = await findPython();
+    if (!python.ok) throw new Error(python.message);
     var tempFile = Zotero.File.pathToFile(temp);
     if (tempFile.exists()) tempFile.remove(false);
-    await Zotero.Utilities.Internal.exec(python, ["-m", "markitdown", pdfPath, "-o", temp]);
+    await Zotero.Utilities.Internal.exec(python.path, ["-m", "markitdown", pdfPath, "-o", temp]);
     if (!tempFile.exists()) throw new Error("MarkItDown did not write a Markdown file.");
     var text = String((await Zotero.File.getContentsAsync(temp, "UTF-8")) || "");
     if (!text.trim()) {
@@ -765,5 +889,7 @@ var ZoteroAssistantContext = (function () {
     collectionCount: collectionCount,
     clearCache: clearCache,
     inspectItem: inspectItem,
+    checkPython: checkPython,
+    detectPython: detectPython,
   };
 })();

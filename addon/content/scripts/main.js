@@ -325,6 +325,14 @@ var ZoteroAssistantMain = (function () {
     writePref("prompt", String(text || ""));
   }
 
+  function getPython() {
+    return String(readPref("python", "") || "").trim();
+  }
+
+  function setPython(path) {
+    writePref("python", String(path || "").trim());
+  }
+
   function installWindow(win) {
     if (!win || win.closed) return;
     try {
@@ -484,6 +492,17 @@ var ZoteroAssistantMain = (function () {
       "startup, " + readProfiles().length + " models, active " + activeProfileId() +
         ", math " + (typeof ZoteroAssistantKatex !== "undefined" && ZoteroAssistantKatex ? "on" : "off"),
     );
+    var python = getPython();
+    (python ? ZoteroAssistantContext.checkPython(python) : ZoteroAssistantContext.detectPython()).then(
+      function (result) {
+        ZoteroAssistantUtil.log(
+          "python " + (python ? "set" : "auto") + ": " + (result.path || "none") + ", " + (result.ok ? "ready" : result.message),
+        );
+      },
+      function (error) {
+        ZoteroAssistantUtil.log("python check failed: " + error);
+      },
+    );
   }
 
   function shutdown() {
@@ -516,6 +535,11 @@ var ZoteroAssistantMain = (function () {
     setSource: setSource,
     setDeepCollections: setDeepCollections,
     setPrompt: setPrompt,
+    getPython: getPython,
+    setPython: setPython,
+    checkPython: function (path) {
+      return path ? ZoteroAssistantContext.checkPython(path) : ZoteroAssistantContext.detectPython();
+    },
     testConnection: function (prefs) {
       return ZoteroAssistantAI.testConnection(prefs || getPrefs());
     },

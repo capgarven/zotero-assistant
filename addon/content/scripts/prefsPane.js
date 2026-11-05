@@ -158,6 +158,58 @@ var ZoteroAssistantPrefs = (function () {
       }
     });
     win.addEventListener("unload", save);
+    initPython(doc, win, api);
+  }
+
+  function initPython(doc, win, api) {
+    var field = doc.getElementById("za-python");
+    var status = doc.getElementById("za-python-status");
+    var runs = 0;
+
+    async function report(path) {
+      var run = (runs += 1);
+      status.textContent = path ? "Checking…" : "Searching for Python…";
+      var result;
+      try {
+        result = await api.checkPython(path);
+      } catch (error) {
+        result = { ok: false, path: path, message: error && error.message ? error.message : String(error) };
+      }
+      if (run !== runs) return result;
+      var where = !path && result.path ? "Found " + result.path + ". " : "";
+      status.textContent = (result.ok ? "✓ " : "✗ ") + where + result.message;
+      return result;
+    }
+
+    function commit() {
+      api.setPython(field.value);
+      report(field.value.trim());
+    }
+
+    field.value = api.getPython();
+    field.addEventListener("change", commit);
+    doc.getElementById("za-python-detect").addEventListener("command", async function () {
+      var result = await report("");
+      if (result.ok) {
+        field.value = result.path;
+        api.setPython(result.path);
+      }
+    });
+    doc.getElementById("za-python-browse").addEventListener("command", async function () {
+      try {
+        var { FilePicker } = ChromeUtils.importESModule("chrome://zotero/content/modules/filePicker.mjs");
+        var picker = new FilePicker();
+        picker.init(win, "Choose the Python executable", picker.modeOpen);
+        if (Zotero.isWin) picker.appendFilter("python.exe", "python*.exe");
+        picker.appendFilters(picker.filterAll);
+        if ((await picker.show()) !== picker.returnOK) return;
+        field.value = String((picker.file && picker.file.path) || picker.file);
+        commit();
+      } catch (error) {
+        status.textContent = "✗ " + (error && error.message ? error.message : String(error));
+      }
+    });
+    if (field.value.trim()) report(field.value.trim());
   }
 
   return { init: init };

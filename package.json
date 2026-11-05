@@ -1,6 +1,6 @@
 {
   "name": "zotero-assistant",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "A Zotero pane for asking an AI about the document you are reading, and saving Markdown notes beside the PDF.",
   "scripts": {

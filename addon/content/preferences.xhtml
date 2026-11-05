@@ -63,4 +63,17 @@
     </description>
     <html:textarea id="za-prompt" rows="7" style="width: 100%"/>
   </groupbox>
+  <groupbox>
+    <label><html:h2>Markdown conversion</html:h2></label>
+    <description style="margin-bottom: 6px; color: var(--fill-secondary);">
+      The Markdown source converts each PDF with MarkItDown, which runs in Python 3.10 or newer. Install it with: python3 -m pip install 'markitdown[pdf]'. Leave the path empty to find Python automatically, or click Detect.
+    </description>
+    <hbox align="center">
+      <label value="Python" style="width: 110px"/>
+      <html:input id="za-python" type="text" placeholder="Find automatically" style="width: 420px"/>
+      <button id="za-python-browse" label="Browse…" style="margin-left: 8px"/>
+      <button id="za-python-detect" label="Detect"/>
+    </hbox>
+    <description id="za-python-status" style="margin-left: 114px; margin-top: 4px; color: var(--fill-secondary);"/>
+  </groupbox>
 </vbox>
