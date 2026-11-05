@@ -6,7 +6,7 @@
 
 ## 中文
 
-Zassistant 是 Zotero 10 的条目面板插件，界面仿照 Cursor 的对话面板。你可以就正在读的论文提问，也可以就一整个分组里的所有论文提问。论文以 Markdown 或 PDF 原文发给 AI。某一轮问答可以总结成 Markdown 笔记保存，下次在面板里直接阅读。
+Zassistant 是 Zotero 10 的条目面板插件。你可以就正在读的论文提问，也可以就一整个分组里的所有论文提问。论文以 Markdown 或 PDF 原文发给 AI。某一轮问答可以总结成 Markdown 笔记保存，下次在面板里直接阅读。
 
 插件只支持 **Zotero 10**。
 
@@ -91,7 +91,7 @@ npm run build
 
 ## English
 
-Zassistant is an item pane plugin for Zotero 10, with a chat panel modeled on Cursor's. Ask about the paper you are reading, or about every paper in a collection. Each paper is sent to the AI as Markdown or as the original PDF. You can summarize a round of questions into a Markdown note and read it in the pane later.
+Zassistant is an item pane plugin for Zotero 10. Ask about the paper you are reading, or about every paper in a collection. Each paper is sent to the AI as Markdown or as the original PDF. You can summarize a round of questions into a Markdown note and read it in the pane later.
 
 Zassistant supports **Zotero 10** only.
 
