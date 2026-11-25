@@ -11,7 +11,7 @@
   "applications": {
     "zotero": {
       "id": "zotero-assistant@local",
-      "update_url": "https://github.com/zotero-assistant/zotero-assistant/releases/download/release/update.json",
+      "update_url": "https://github.com/capgarven/zotero-assistant/releases/download/release/update.json",
       "strict_min_version": "10.0",
       "strict_max_version": "10.0.*"
     }
